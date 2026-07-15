@@ -1,18 +1,20 @@
-# Mein Lernpfad-
-Lernunterlagen 
 # Linux-Grundlagen auf Ubuntu
 
 > Meine persönliche Zusammenfassung aller Basics, die ich mir auf meiner AWS EC2 Ubuntu-Instance draufgeschafft habe.
 
 ## Worum geht's hier?
 
-Diese Zusammenfassung deckt alle Linux-Basics ab, die ich täglich brauche, sobald ich auf einem Server arbeite. Von Navigation über Datei-Handling bis hin zu Diensten und dem Filter-Trick mit Pipes.
+Diese Zusammenfassung deckt alle Linux-Basics ab, die ich täglich brauche, sobald ich auf einem Server arbeite. Von Navigation über Datei-Handling bis hin zu Rechten, Diensten und dem Lesen von Logs.
+
+---
 
 ## 1. Navigation — Wo bin ich, was ist hier?
 
 Das Terminal ist wie ein Datei-Explorer ohne Fenster — ich bin immer in genau einem Ordner. Diese drei Befehle sind das Fundament:
 
-bash pwd
+```bash
+pwd
+```
 → **P**rint **W**orking **D**irectory — zeigt, wo ich gerade stehe. Meistens `/home/ubuntu`.
 
 ```bash
@@ -222,7 +224,162 @@ Ein Dienst kann alle Kombinationen davon haben. Nach einem `stop` ist er `inacti
 
 ---
 
-## 9. Schnellreferenz — Alle Befehle auf einen Blick
+## 9. Rechte — Wer darf was mit einer Datei machen?
+
+### Warum überhaupt?
+
+Auf einem Server arbeiten oft viele User. Manche Dateien darfst nur du ändern, andere sind für alle lesbar, wieder andere komplett geheim (SSH-Keys!). Dafür braucht Linux eine **Erlaubnis-Liste** an jeder Datei.
+
+### Der Rechte-Code
+
+Wenn du `ls -la` machst, siehst du links sowas wie `-rw-r--r--`. Das entschlüsselt sich so:
+
+```
+- rw- r-- r--
+│  │   │   │
+│  │   │   └── Alle anderen: nur lesen
+│  │   └────── Die Gruppe: nur lesen
+│  └────────── Der Besitzer: lesen + schreiben
+└───────────── Typ: - = Datei, d = Ordner
+```
+
+### Die drei Rechte
+
+| Buchstabe | Name | Bei Dateien | Bei Ordnern |
+|---|---|---|---|
+| **r** | read | Inhalt lesen | Auflisten dürfen (`ls`) |
+| **w** | write | Verändern oder löschen | Neue Dateien anlegen |
+| **x** | execute | Als Programm ausführen | Hineingehen dürfen (`cd`) |
+
+Ein `-` an einer Stelle heißt: dieses Recht fehlt.
+
+### Die drei Empfänger
+
+1. **u** (user) — der Besitzer
+2. **g** (group) — die Gruppe
+3. **o** (others) — alle anderen
+4. **a** (all) — Kurzform für alle drei
+
+### chmod — Rechte ändern
+
+Formel: `chmod [wer][+ oder -][was] datei`
+
+```bash
+chmod +x script.sh
+```
+→ Fügt `x` für ALLE hinzu (Standard, wenn keine Zielgruppe angegeben).
+
+```bash
+chmod u+x script.sh
+```
+→ Fügt `x` nur beim **user** (Besitzer) hinzu.
+
+```bash
+chmod g-w datei.txt
+```
+→ Nimmt der **group** das Schreibrecht weg.
+
+```bash
+chmod o-r geheim.txt
+```
+→ Nimmt **others** das Leserecht weg.
+
+### Beispiele aus der Praxis
+
+- `-rw-------` → typisch für SSH-Keys. Nur du darfst lesen/schreiben. SSH weigert sich sonst, den Key zu benutzen.
+- `-rwxr-xr-x` → typisch für Programme. Alle dürfen lesen und ausführen, nur der Besitzer darf ändern.
+- `drwxr-xr-x` → Standard für Ordner. Alle dürfen reingucken, nur der Besitzer verändert.
+
+---
+
+## 10. Logs lesen — Was hat der Server aufgeschrieben?
+
+### Was sind Logs?
+
+Ein **Log** ist ein Tagebuch, das ein Programm über sich selbst schreibt. Jedes Mal wenn was Wichtiges passiert (Erfolg, Fehler, Warnung), landet eine Zeile mit Zeitstempel in einer Datei. Wenn irgendwas nicht funktioniert, sind Logs der erste Anlaufpunkt.
+
+Fast alle Logs liegen unter **`/var/log/`**.
+
+### Die wichtigsten Log-Dateien
+
+- **`syslog`** — allgemeines System-Log, sammelt alles Mögliche
+- **`auth.log`** — jede Anmeldung, jeder `sudo`-Befehl (super wichtig für Security)
+- **`kern.log`** — Kernel-Meldungen
+- **`dpkg.log`** — Paket-Installationen
+- **`nginx/access.log`** und **`nginx/error.log`** — Webserver
+- **`cloud-init.log`** — AWS-spezifisch, was beim EC2-Start eingerichtet wurde
+
+> **Log-Rotation:** Dateien wie `auth.log.1` oder `.gz` sind archivierte alte Versionen — Linux packt Logs weg, damit sie nicht endlos wachsen.
+
+### tail — die letzten Zeilen anzeigen
+
+Logs sind oft riesig. `tail` zeigt nur die letzten Zeilen — perfekt für "was ist zuletzt passiert?".
+
+```bash
+sudo tail /var/log/auth.log
+```
+→ Die letzten 10 Zeilen.
+
+```bash
+sudo tail -n 30 /var/log/auth.log
+```
+→ Die letzten 30 Zeilen. `-n <zahl>` = number of lines.
+
+```bash
+sudo tail -f /var/log/auth.log
+```
+→ **Live-Ticker!** Das `-f` = follow. Es bleibt offen und zeigt neue Zeilen sofort, wenn sie geschrieben werden. Beenden mit **Ctrl+C**.
+
+**Praxis-Trick:** `tail -f` in einem Fenster laufen lassen, im zweiten Fenster die Aktion auslösen (z.B. neuer SSH-Login) → Live-Zeile taucht sofort auf. So debuggen Admins Server.
+
+### less — durch große Dateien navigieren
+
+Wenn du eine große Log-Datei komplett durchsuchen willst, ist `less` das Tool.
+
+```bash
+sudo less /var/log/auth.log
+```
+
+Steuerung in `less`:
+
+| Taste | Aktion |
+|---|---|
+| Pfeile / Space | Seitenweise blättern |
+| **g** | Ganz nach oben |
+| **Shift + G** | Ganz nach unten |
+| **/suchbegriff** | Suchen (wie Ctrl+F) |
+| **n** | Nächster Treffer |
+| **N** | Vorheriger Treffer |
+| **q** | Raus |
+
+```bash
+sudo less -i /var/log/auth.log
+```
+→ Das `-i` = ignore case. Suche ist dann NICHT case-sensitive (`/accepted` findet auch `Accepted`).
+
+### head — das Gegenteil von tail
+
+```bash
+head /var/log/auth.log
+```
+→ Zeigt die **ersten** 10 Zeilen (statt der letzten).
+
+### Beispiel-Log entschlüsseln
+
+Zeile aus dem `auth.log`:
+
+```
+2026-07-15T16:50:42  ip-172-31-14-61  sshd-session[29841]: Accepted publickey for ubuntu from 89.244.82.7
+```
+
+- `2026-07-15T16:50:42` — Zeitstempel
+- `ip-172-31-14-61` — Server-Name
+- `sshd-session[29841]` — Programm (SSH), Prozess-ID
+- Rest: Anmeldung akzeptiert für User `ubuntu` von IP `89.244.82.7`
+
+---
+
+## 11. Schnellreferenz — Alle Befehle auf einen Blick
 
 | Befehl | Was er macht |
 |---|---|
@@ -248,16 +405,23 @@ Ein Dienst kann alle Kombinationen davon haben. Nach einem `stop` ist er `inacti
 | `<befehl> \| grep <text>` | Ausgabe nach Text filtern |
 | `sudo systemctl status <dienst>` | Status eines Dienstes |
 | `sudo systemctl start/stop/restart <dienst>` | Dienst steuern |
+| `chmod +x <datei>` | Ausführbar machen |
+| `chmod u+x / g-w / o-r <datei>` | Gezielt Rechte geben/nehmen |
+| `tail <datei>` | Letzte 10 Zeilen |
+| `tail -f <datei>` | Live-Ticker (Ctrl+C zum Beenden) |
+| `less <datei>` | Große Datei durchsuchen |
+| `head <datei>` | Erste 10 Zeilen |
 
 ---
 
 ## Was kommt als Nächstes?
 
-- `chmod` & `chown` — Rechte und Besitzer von Dateien ändern
-- `tail` & `less` — Log-Dateien lesen (fürs Debugging)
-- Netzwerk-Analyse — `ss`, `curl`, `dig`, `tcpdump`
-- Dann: Python lernen und der Report-Generator als Portfolio-Projekt
+- **Python lernen** — Grundlagen für den Report-Generator
+- **Netzwerk-Analyse** — `ss`, `curl`, `dig`, `tcpdump`
+- **CI/CD-Pipeline** — die `deploy.yml` fürs automatische Deployen
+- **Report-Generator bauen** — mein Portfolio-Projekt
+- **AWS-Breite** — S3, IAM, VPC, Load Balancer (Richtung SAA-C03)
 
 ---
 
-*Ende — Ahmed Mayyas*
+*Stand: Juli 2026 — Ahmed Mayyas*
